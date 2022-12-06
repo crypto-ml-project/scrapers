@@ -26,6 +26,7 @@
   },
   "dependencies": {
     "@prisma/client": "^4.6.1",
+    "discord-webhook-node": "^1.1.8",
     "fs-extra": "^11.0.0"
   }
 }

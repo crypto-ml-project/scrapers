@@ -1,9 +1,14 @@
 import { PrismaClient } from "@prisma/client";
+import { Webhook } from "discord-webhook-node";
+
+const hook = new Webhook(
+  "https://discord.com/api/webhooks/1049743519356571679/QF89ZzJFbpEOwoYRTgjLaqoAmwJWu6nabYxNQyOquc32NMx1MP8eqAL7Iu_SQNABaw8E"
+);
 
 const { spawn } = require("child_process");
 const fs = require("fs-extra");
 const child = spawn("snscrape", [
-  "-n 10000",
+  "-n 200000",
   "--jsonl",
   "twitter-search",
   "Optimism Crypto",
@@ -17,6 +22,17 @@ const prisma = new PrismaClient();
 child.stderr.on("data", (data: any) => {
   console.error(`stderr: ${data}`);
 });
+
+let tweetCount = 0;
+
+child.stdout.on("data", async (data: any) => {
+  const tweets = data.toString().match(/\n/g).length;
+  tweetCount += tweets;
+});
+
+setInterval(async () => {
+  hook.send("Tweets Processed: " + tweetCount);
+}, 1.8e6);
 
 child.on("close", async (code: any) => {
   console.log(`child process exited with code ${code}`);
