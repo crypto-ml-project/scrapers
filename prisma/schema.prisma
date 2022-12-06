@@ -1,0 +1,43 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model SocialMediaPosts {
+  id         String   @unique
+  tags       String[]
+  content    String
+  timeStamp  DateTime
+  like       Int
+  comments   Int
+  userId     String
+  user       User     @relation(fields: [userId], references: [userId])
+  platformId String
+  groupId    String?
+  emotions   Json?
+  bot        Boolean  @default(false)
+}
+
+model User {
+  userId           String             @unique
+  created_at       DateTime
+  follower         Int
+  description      String
+  SocialMediaPosts SocialMediaPosts[]
+}
+
+model Group {
+  id            String   @id @default(uuid())
+  groupId       String
+  groupSize     Int
+  activityScore Float
+  createdAt     DateTime
+  private       Boolean  @default(false)
+}
