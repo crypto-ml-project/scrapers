@@ -1,23 +1,17 @@
 import { PrismaClient } from "@prisma/client";
 import { Webhook } from "discord-webhook-node";
+const { spawn } = require("child_process");
 
+const prisma = new PrismaClient();
 const hook = new Webhook(
   "https://discord.com/api/webhooks/1049743519356571679/QF89ZzJFbpEOwoYRTgjLaqoAmwJWu6nabYxNQyOquc32NMx1MP8eqAL7Iu_SQNABaw8E"
 );
-
-const { spawn } = require("child_process");
-const fs = require("fs-extra");
 const child = spawn("snscrape", [
   "-n 1000000",
   "--jsonl",
   "twitter-search",
   "Optimism Crypto",
 ]);
-const jsonLog = fs.createWriteStream("twitter.json", { flags: "a" });
-
-child.stdout.pipe(jsonLog);
-
-const prisma = new PrismaClient();
 
 child.stderr.on("data", (data: any) => {
   console.error(`stderr: ${data}`);
@@ -27,27 +21,14 @@ child.stderr.on("data", (data: any) => {
 let tweetCount = 0;
 
 child.stdout.on("data", async (data: any) => {
-  const match = data.toString().match(/\n/g);
-  tweetCount += match?.length ? match.length : 0;
-});
+  const tweetsLength = data.toString().match(/\n/g).length;
+  tweetCount += tweetsLength;
 
-setInterval(async () => {
-  const msg = "Tweets Processed: " + tweetCount;
-  console.log(new Date(), msg);
-}, 1000);
+  let tmpTweets = data.toString().split(/\n/g);
 
+  tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
 
-setInterval(async () => {
-  const msg = "Tweets Processed: " + tweetCount;
-  hook.send(msg);
-}, 1.8e6);
-
-child.on("close", async (code: any) => {
-  console.log(`child process exited with code ${code}`);
-  console.log("⚙️ Populating Db with Twitter Data");
-  const fileData = await fs.readFile("twitter.json", { flags: "a" });
-  const data = fileData.toString().split("\n");
-  const tweets = data.slice(0, data.length - 1).map((tweet: any) => {
+  const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
     return JSON.parse(tweet);
   });
 
@@ -55,12 +36,15 @@ child.on("close", async (code: any) => {
     await addUserData(tweet);
     await addPostData(tweet);
   }
-
-  console.log("✅ Populated Db with Twitter Data");
 });
 
+setInterval(async () => {
+  hook.send("Tweets Processed: " + tweetCount);
+  // console.log("Tweets Processed: " + tweetCount);
+}, 1.8e6);
+// }, 1000);
+
 async function addUserData(tweet: any) {
-  console.log("⚙️ Populating User Data");
   const usercheck = await prisma.user.findUnique({
     where: {
       userId: tweet.user.username,
