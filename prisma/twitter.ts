@@ -29,9 +29,8 @@ child.stdout.on("data", async (data: any) => {
 
   tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
 
-  tweetCount += tmpTweets.length;
-
   const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
+    tweetCount++;
     return JSON.parse(tweet);
   });
 
@@ -70,7 +69,7 @@ setInterval(async () => {
   );
   if (
     tweetCount > 10000 &&
-    (duplicateCount > createCount * 0.75 || createCount === 0)
+    (duplicateCount > createCount * 0.9 || createCount === 0)
   ) {
     hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
   }
