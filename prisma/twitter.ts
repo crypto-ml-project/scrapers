@@ -21,36 +21,57 @@ child.stderr.on("data", (data: any) => {
 });
 
 let tweetCount = 0;
+let createCount = 0;
 let duplicateCount = 0;
 
 child.stdout.on("data", async (data: any) => {
-  const tweetsLength = data.toString().match(/\n/g).length;
-  tweetCount += tweetsLength;
-
   let tmpTweets = data.toString().split(/\n/g);
 
   tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
+
+  tweetCount += tmpTweets.length;
 
   const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
     return JSON.parse(tweet);
   });
 
   for (const tweet of tweets) {
-    await addUserData(tweet);
-    await addPostData(tweet);
+    const user = await addUserData(tweet);
+    const post = await addPostData(tweet);
+    if (!user || !post) {
+      duplicateCount++;
+    } else {
+      createCount++;
+    }
   }
 });
 
 setInterval(async () => {
-  const msg = "Tweets Processed: " + tweetCount;
-  console.log(tweetCount, duplicateCount);
-
-  console.log(new Date().toDateString(), msg);
+  const msg = "⚙️ Tweets Processed: " + tweetCount;
+  const createMsg = "✅ Tweets Created: " + createCount;
+  const duplicateMsg = "⚠️ Duplicate Tweets: " + duplicateCount;
+  const date = new Date();
+  console.log(
+    date.toLocaleDateString(),
+    date.toLocaleTimeString(),
+    msg,
+    createMsg,
+    duplicateMsg
+  );
 }, 1000);
 
 setInterval(async () => {
-  hook.info("**Tweets Processed:**", tweetCount.toLocaleString());
-  if (tweetCount > 10000 && duplicateCount > tweetCount * 0.75) {
+  const msg = "⚙️ Tweets Processed: " + tweetCount;
+  const createMsg = "✅ Tweets Created: " + createCount;
+  const duplicateMsg = "⚠️ Duplicate Tweets: " + duplicateCount;
+  const date = new Date();
+  hook.send(
+    `\`\`\`${date.toLocaleDateString()} ${date.toLocaleTimeString()} | ${msg} | ${createMsg} | ${duplicateMsg}\`\`\``
+  );
+  if (
+    tweetCount > 10000 &&
+    (duplicateCount > createCount * 0.75 || createCount === 0)
+  ) {
     hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
   }
 }, 1.8e6);
@@ -63,8 +84,8 @@ async function addUserData(tweet: any) {
   });
 
   if (usercheck) {
-    console.log("⚠️ User Data already exists for: " + tweet.user.username);
-    return;
+    // console.log("⚠️ User Data already exists for: " + tweet.user.username);
+    return false;
   } else {
     const user = await prisma.user.create({
       data: {
@@ -76,11 +97,9 @@ async function addUserData(tweet: any) {
     });
 
     if (!user) {
-      console.log("❌ Failed to populate User Data");
+      hook.error("**❌ Failed to populate User Data:**", tweet.user.username);
       return false;
     }
-
-    console.log("✅ Populated User Data for: " + tweet.user.username);
     return true;
   }
 }
@@ -94,9 +113,7 @@ async function addPostData(tweet: any) {
   });
 
   if (postCheck) {
-    duplicateCount++;
-    console.log("⚠️ Post Data already exists for: " + tweetId);
-    return;
+    return false;
   } else {
     const socialMediaPost = await prisma.socialMediaPosts.create({
       data: {
@@ -116,13 +133,9 @@ async function addPostData(tweet: any) {
     });
 
     if (!socialMediaPost) {
-      console.log("❌ Failed to populate Social Media Post Data");
+      hook.error("**❌ Failed to populate Social Media Post Data:**", tweetId);
       return false;
-    } else {
-      console.log(
-        "✅ Populated Social Media Post Data from: " + socialMediaPost.userId
-      );
-      return true;
     }
+    return true;
   }
 }
