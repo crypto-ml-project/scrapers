@@ -8,7 +8,7 @@ const hook = new Webhook(
 const { spawn } = require("child_process");
 const fs = require("fs-extra");
 const child = spawn("snscrape", [
-  "-n 200000",
+  "-n 1000000",
   "--jsonl",
   "twitter-search",
   "Optimism Crypto",
@@ -21,17 +21,25 @@ const prisma = new PrismaClient();
 
 child.stderr.on("data", (data: any) => {
   console.error(`stderr: ${data}`);
+  fs.appendFile("errors.txt", `${new Date()} ${data}`);
 });
 
 let tweetCount = 0;
 
 child.stdout.on("data", async (data: any) => {
-  const tweets = data.toString().match(/\n/g).length;
-  tweetCount += tweets;
+  const match = data.toString().match(/\n/g);
+  tweetCount += match?.length ? match.length : 0;
 });
 
 setInterval(async () => {
-  hook.send("Tweets Processed: " + tweetCount);
+  const msg = "Tweets Processed: " + tweetCount;
+  console.log(new Date(), msg);
+}, 1000);
+
+
+setInterval(async () => {
+  const msg = "Tweets Processed: " + tweetCount;
+  hook.send(msg);
 }, 1.8e6);
 
 child.on("close", async (code: any) => {
