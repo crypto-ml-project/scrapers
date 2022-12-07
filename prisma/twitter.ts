@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { Webhook } from "discord-webhook-node";
+import { MessageBuilder, Webhook } from "discord-webhook-node";
 const { spawn } = require("child_process");
 const fs = require("fs-extra");
 
@@ -17,9 +17,11 @@ const child = spawn("snscrape", [
 child.stderr.on("data", (data: any) => {
   console.error(`stderr: ${data}`);
   fs.appendFile("errors.txt", `${new Date()} ${data}`);
+  hook.error("**Error Processing Tweets:**", `${data}`);
 });
 
 let tweetCount = 0;
+let duplicateCount = 0;
 
 child.stdout.on("data", async (data: any) => {
   const tweetsLength = data.toString().match(/\n/g).length;
@@ -40,10 +42,18 @@ child.stdout.on("data", async (data: any) => {
 });
 
 setInterval(async () => {
-  hook.send("Tweets Processed: " + tweetCount);
-  // console.log("Tweets Processed: " + tweetCount);
+  const msg = "Tweets Processed: " + tweetCount;
+  console.log(tweetCount, duplicateCount);
+
+  console.log(new Date().toDateString(), msg);
+}, 1000);
+
+setInterval(async () => {
+  hook.info("**Tweets Processed:**", tweetCount.toLocaleString());
+  if (tweetCount > 10000 && duplicateCount > tweetCount * 0.75) {
+    hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
+  }
 }, 1.8e6);
-// }, 1000);
 
 async function addUserData(tweet: any) {
   const usercheck = await prisma.user.findUnique({
@@ -84,6 +94,7 @@ async function addPostData(tweet: any) {
   });
 
   if (postCheck) {
+    duplicateCount++;
     console.log("⚠️ Post Data already exists for: " + tweetId);
     return;
   } else {
