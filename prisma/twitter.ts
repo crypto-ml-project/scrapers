@@ -1,6 +1,7 @@
 import { PrismaClient } from "@prisma/client";
 import { Webhook } from "discord-webhook-node";
 const { spawn } = require("child_process");
+const fs = require("fs-extra");
 
 const prisma = new PrismaClient();
 const hook = new Webhook(
