@@ -23,6 +23,7 @@ model SocialMediaPosts {
   groupId    String?
   emotions   Json?
   bot        Boolean  @default(false)
+  type       String
 }
 
 model User {

@@ -19,6 +19,7 @@
   },
   "homepage": "https://github.com/crypto-ml-project/scrapers#readme",
   "devDependencies": {
+    "@types/fs-extra": "^9.0.13",
     "@types/node": "^18.11.9",
     "prisma": "^4.6.1",
     "ts-node": "^10.9.1",

@@ -1,17 +1,17 @@
 import { PrismaClient } from "@prisma/client";
-import { MessageBuilder, Webhook } from "discord-webhook-node";
-const { spawn } = require("child_process");
-const fs = require("fs-extra");
+import { Webhook } from "discord-webhook-node";
+import { spawn } from "child_process";
+import fs from "fs-extra";
 
 const prisma = new PrismaClient();
 const hook = new Webhook(
   "https://discord.com/api/webhooks/1049743519356571679/QF89ZzJFbpEOwoYRTgjLaqoAmwJWu6nabYxNQyOquc32NMx1MP8eqAL7Iu_SQNABaw8E"
 );
 const child = spawn("snscrape", [
-  "-n 1000000",
+  "-n 100",
   "--jsonl",
   "twitter-search",
-  "Optimism Crypto",
+  "Optimism Coin",
 ]);
 
 child.stderr.on("data", (data: any) => {
@@ -42,6 +42,13 @@ child.stdout.on("data", async (data: any) => {
     } else {
       createCount++;
     }
+
+    if (
+      tweetCount > 10000 &&
+      (duplicateCount > createCount * 0.9 || createCount === 0)
+    ) {
+      hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
+    }
   }
 });
 
@@ -67,12 +74,6 @@ setInterval(async () => {
   hook.send(
     `\`\`\`${date.toLocaleDateString()} ${date.toLocaleTimeString()} | ${msg} | ${createMsg} | ${duplicateMsg}\`\`\``
   );
-  if (
-    tweetCount > 10000 &&
-    (duplicateCount > createCount * 0.9 || createCount === 0)
-  ) {
-    hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
-  }
 }, 1.8e6);
 
 async function addUserData(tweet: any) {
