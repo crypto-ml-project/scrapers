@@ -8,6 +8,7 @@ const hook = new Webhook(
   "https://discord.com/api/webhooks/1049743519356571679/QF89ZzJFbpEOwoYRTgjLaqoAmwJWu6nabYxNQyOquc32NMx1MP8eqAL7Iu_SQNABaw8E"
 );
 
+const platform = "twitter";
 const coin = "optimism";
 
 const child = spawn("snscrape", [
@@ -50,11 +51,13 @@ async function saveChunk() {
     const txs: any = [];
 
     for (let tweet of chunk) {
+      const postId = `${platform}_${tweet.url.split("/")[5]}_${coin}`;
+
       intervalCount++;
 
       const postCheck = await prisma.socialMediaPosts.findUnique({
         where: {
-          id: tweet.url.split("/")[5],
+          id: postId,
         },
       });
 
@@ -80,12 +83,12 @@ async function saveChunk() {
       txs.push(tx);
 
       const tweetData = {
-        id: tweet.url.split("/")[5],
+        id: postId,
         content: tweet.content,
         timeStamp: tweet.date,
         like: tweet.likeCount,
         comments: tweet.replyCount,
-        platformId: "twitter",
+        platformId: platform,
         tags: tweet.hashtags ? tweet.hashtags : [],
         userId: tweet.user.username,
         coin: coin,
