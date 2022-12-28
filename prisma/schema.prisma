@@ -24,6 +24,7 @@ model SocialMediaPosts {
   emotions   Json?
   bot        Boolean  @default(false)
   type       String
+  coin       String
 }
 
 model User {
