@@ -7,11 +7,14 @@ const prisma = new PrismaClient();
 const hook = new Webhook(
   "https://discord.com/api/webhooks/1049743519356571679/QF89ZzJFbpEOwoYRTgjLaqoAmwJWu6nabYxNQyOquc32NMx1MP8eqAL7Iu_SQNABaw8E"
 );
+
+const coin = "optimism";
+
 const child = spawn("snscrape", [
-  "-n 100",
+  "-n 10000000",
   "--jsonl",
   "twitter-search",
-  "Optimism Coin",
+  "Optimism Crypto",
 ]);
 
 child.stderr.on("data", (data: any) => {
@@ -21,102 +24,62 @@ child.stderr.on("data", (data: any) => {
 });
 
 let tweetCount = 0;
-let createCount = 0;
 let duplicateCount = 0;
+let intervalCount = 0;
+
+let chunk: any[] = [];
+let saving = false;
 
 child.stdout.on("data", async (data: any) => {
   let tmpTweets = data.toString().split(/\n/g);
-
   tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
 
   const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
-    tweetCount++;
     return JSON.parse(tweet);
   });
 
-  for (const tweet of tweets) {
-    const user = await addUserData(tweet);
-    const post = await addPostData(tweet);
-    if (!user || !post) {
-      duplicateCount++;
-    } else {
-      createCount++;
-    }
+  tweetCount += tweets.length;
 
-    if (
-      tweetCount > 10000 &&
-      (duplicateCount > createCount * 0.9 || createCount === 0)
-    ) {
-      hook.warning("**Duplicate Tweets:**", duplicateCount.toLocaleString());
-    }
-  }
+  chunk.push(...tweets);
 });
 
-setInterval(async () => {
-  const msg = "⚙️ Tweets Processed: " + tweetCount;
-  const createMsg = "✅ Tweets Created: " + createCount;
-  const duplicateMsg = "⚠️ Duplicate Tweets: " + duplicateCount;
-  const date = new Date();
-  console.log(
-    date.toLocaleDateString(),
-    date.toLocaleTimeString(),
-    msg,
-    createMsg,
-    duplicateMsg
-  );
-}, 1000);
+async function saveChunk() {
+  saving = true;
 
-setInterval(async () => {
-  const msg = "⚙️ Tweets Processed: " + tweetCount;
-  const createMsg = "✅ Tweets Created: " + createCount;
-  const duplicateMsg = "⚠️ Duplicate Tweets: " + duplicateCount;
-  const date = new Date();
-  hook.send(
-    `\`\`\`${date.toLocaleDateString()} ${date.toLocaleTimeString()} | ${msg} | ${createMsg} | ${duplicateMsg}\`\`\``
-  );
-}, 1.8e6);
+  try {
+    const txs: any = [];
 
-async function addUserData(tweet: any) {
-  const usercheck = await prisma.user.findUnique({
-    where: {
-      userId: tweet.user.username,
-    },
-  });
+    for (let tweet of chunk) {
+      intervalCount++;
 
-  if (usercheck) {
-    // console.log("⚠️ User Data already exists for: " + tweet.user.username);
-    return false;
-  } else {
-    const user = await prisma.user.create({
-      data: {
+      const postCheck = await prisma.socialMediaPosts.findUnique({
+        where: {
+          id: tweet.url.split("/")[5],
+        },
+      });
+
+      if (postCheck) {
+        duplicateCount++;
+      }
+
+      const userData = {
         userId: tweet.user.username,
         created_at: tweet.user.created,
         follower: tweet.user.followersCount,
         description: tweet.user.description,
-      },
-    });
+      };
 
-    if (!user) {
-      hook.error("**❌ Failed to populate User Data:**", tweet.user.username);
-      return false;
-    }
-    return true;
-  }
-}
+      const tx = prisma.user.upsert({
+        where: {
+          userId: userData.userId,
+        },
+        create: userData,
+        update: userData,
+      });
 
-async function addPostData(tweet: any) {
-  const tweetId = tweet.url.split("/")[5];
-  const postCheck = await prisma.socialMediaPosts.findUnique({
-    where: {
-      id: tweetId,
-    },
-  });
+      txs.push(tx);
 
-  if (postCheck) {
-    return false;
-  } else {
-    const socialMediaPost = await prisma.socialMediaPosts.create({
-      data: {
+      const tweetData = {
         id: tweet.url.split("/")[5],
         content: tweet.content,
         timeStamp: tweet.date,
@@ -124,18 +87,56 @@ async function addPostData(tweet: any) {
         comments: tweet.replyCount,
         platformId: "twitter",
         tags: tweet.hashtags ? tweet.hashtags : [],
-        user: {
-          connect: {
-            userId: tweet.user.username,
-          },
-        },
-      },
-    });
+        userId: tweet.user.username,
+        coin: coin,
+      };
 
-    if (!socialMediaPost) {
-      hook.error("**❌ Failed to populate Social Media Post Data:**", tweetId);
-      return false;
+      const tx2 = prisma.socialMediaPosts.upsert({
+        where: {
+          id: tweetData.id,
+        },
+        create: tweetData,
+        update: tweetData,
+      });
+
+      txs.push(tx2);
     }
-    return true;
+
+    chunk = [];
+
+    await prisma.$transaction(txs);
+  } catch (err) {
+    console.log(err);
   }
+
+  saving = false;
 }
+
+setInterval(async () => {
+  if (saving || !chunk.length) return;
+  await saveChunk();
+}, 100);
+
+setInterval(async () => {
+  const msg = "⚙️ Tweets Processed: " + tweetCount;
+  const date = new Date();
+  console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
+}, 1000);
+
+setInterval(async () => {
+  if (intervalCount === duplicateCount) {
+    const date = new Date();
+    console.log("No new tweets found", intervalCount, duplicateCount);
+    hook.warning(
+      `\`\`\`${date.toLocaleDateString()} | Only able to find duplicate Tweets for the past 10min's. Moving to the next Keyword.\`\`\``
+    );
+  }
+}, 600000);
+
+setInterval(async () => {
+  const msg = "⚙️ Tweets Processed: " + tweetCount;
+  const date = new Date();
+  hook.send(
+    `\`\`\`${date.toLocaleDateString()} ${date.toLocaleTimeString()} | ${msg}\`\`\``
+  );
+}, 1.8e6);
