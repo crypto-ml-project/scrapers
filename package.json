@@ -5,7 +5,7 @@
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1",
-    "twitter": "npx ts-node prisma/twitter.ts"
+    "twitter": "npx ts-node scripts/twitter.ts"
   },
   "repository": {
     "type": "git",
