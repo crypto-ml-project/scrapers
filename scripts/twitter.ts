@@ -2,46 +2,51 @@ import { PrismaClient } from "@prisma/client";
 import { spawn } from "child_process";
 import { MessageBuilder, Webhook } from "discord-webhook-node";
 import fs from "fs-extra";
+import keywords from "../keywords.json";
 
 const prisma = new PrismaClient();
 const hook = new Webhook(
   "https://discord.com/api/webhooks/1057807224182931556/XIvU0Mi7yKGGhBu7gJH7sYAgn68Jo7fLSVorots5m7CdzCquHCR03sVsz--uA6KxDNkU"
 );
 
-const platform = "twitter";
-const coin = "optimism";
-
-const child = spawn("snscrape", [
-  "-n 100000",
-  "--jsonl",
-  "twitter-search",
-  "Optimism Crypto",
-]);
-
-child.stderr.on("data", (data: any) => {
-  console.error(`stderr: ${data}`);
-  fs.appendFile("errors.txt", `${new Date()} ${data}`);
-  hook.error("**Error Processing Tweets:**", `${data}`);
-});
+let chunk: any[] = [];
+let saving = false;
 
 let tweetCount = 0;
 let duplicateCount = 0;
 let currentIntervalCount = 0;
 let totalIntervalCount = 0;
 
-let chunk: any[] = [];
-let saving = false;
+async function scrape(keyword: string) {
+  tweetCount = 0;
+  duplicateCount = 0;
+  currentIntervalCount = 0;
+  totalIntervalCount = 0;
 
-child.stdout.on("data", async (data: any) => {
-  let tmpTweets = data.toString().split(/\n/g);
-  tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
+  const child = spawn("snscrape", [
+    //"-n 100000",
+    "--jsonl",
+    "twitter-search",
+    keyword,
+  ]);
 
-  const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
-    return JSON.parse(tweet);
+  child.stderr.on("data", (data: any) => {
+    console.error(`stderr: ${data}`);
+    fs.appendFile("errors.txt", `${new Date()} ${data}`);
+    hook.error("**Error Processing Tweets:**", `${data}`);
   });
 
-  chunk.push(...tweets);
-});
+  child.stdout.on("data", async (data: any) => {
+    let tmpTweets = data.toString().split(/\n/g);
+    tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
+
+    const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
+      return JSON.parse(tweet);
+    });
+
+    chunk.push(...tweets);
+  });
+}
 
 async function saveChunk() {
   saving = true;
@@ -136,24 +141,24 @@ setInterval(async () => {
   console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
 }, 1000);
 
-setInterval(async () => {
-  if (duplicateCount >= currentIntervalCount) {
-    await handleDuplicateCount().then(() => {
-      process.exit();
-    });
-  }
-}, 600000);
+// setInterval(async () => {
+//   if (duplicateCount >= currentIntervalCount) {
+//     await handleDuplicateCount().then(() => {
+//       process.exit();
+//     });
+//   }
+// }, 600000);
 
 async function handleDuplicateCount() {
   const msg =
     "No new tweets found for the past 10min's. Moving to the next Keyword.";
-  const statusEmbed = buildStatusEmbed({
-    description:
-      "No new tweets found for the past 10min's. Moving to the next Keyword.",
-    tweetCount: tweetCount.toLocaleString(),
-    duplicateCount: duplicateCount.toLocaleString(),
-    intervalCount: totalIntervalCount.toLocaleString(),
-  });
+  const statusEmbed = buildStatusEmbed(
+    msg,
+    tweetCount.toLocaleString(),
+    duplicateCount.toLocaleString(),
+    totalIntervalCount.toLocaleString(),
+    ""
+  );
   await hook.send(statusEmbed);
   currentIntervalCount = 0;
   duplicateCount = 0;
@@ -161,17 +166,13 @@ async function handleDuplicateCount() {
   return;
 }
 
-function buildStatusEmbed({
-  description,
-  tweetCount,
-  duplicateCount,
-  intervalCount,
-}: {
-  description: string;
-  tweetCount: string;
-  duplicateCount: string;
-  intervalCount: string;
-}) {
+function buildStatusEmbed(
+  description: string,
+  tweetCount: string,
+  duplicateCount: string,
+  intervalCount: string,
+  coin: string
+) {
   return new MessageBuilder()
     .setTitle("Status Update")
     .setDescription(description)
