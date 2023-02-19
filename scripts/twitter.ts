@@ -9,22 +9,51 @@ const hook = new Webhook(
   "https://discord.com/api/webhooks/1057807224182931556/XIvU0Mi7yKGGhBu7gJH7sYAgn68Jo7fLSVorots5m7CdzCquHCR03sVsz--uA6KxDNkU"
 );
 
+let coin: string;
+let keyword: string;
+
 let chunk: any[] = [];
 let saving = false;
-
 let tweetCount = 0;
 let duplicateCount = 0;
-
 let childProcess: ChildProcessWithoutNullStreams;
 
 async function main() {
-  for (let [coin, keys] of Object.entries(keywords.twitter)) {
-    for (let keyword of keys) {
+  setInterval(async () => {
+    if (saving || !chunk.length) return;
+    await saveChunk();
+  }, 100);
+
+  // Console logs
+  setInterval(async () => {
+    const msg =
+      "Tweets Processed: " +
+      tweetCount +
+      " | Duplicates: " +
+      duplicateCount +
+      " | Created: " +
+      (tweetCount - duplicateCount);
+    const date = new Date();
+    console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
+  }, 5000);
+
+  // Hourly discord notifications
+  setInterval(async () => {
+    await sendNotification("Scraping 😎...");
+  }, 1000 * 60 * 60);
+
+  for (let [c, keys] of Object.entries(keywords.twitter)) {
+    for (let key of keys) {
       // Start scraping
-      scrape(keyword, coin);
+      coin = c;
+      keyword = key;
+      scrapeNext();
       // Block here till we have too many duplicates
       await waitForDuplicates();
-      await sendProgressNotification(coin, keyword);
+      const msg =
+        "More than 20% of the tweets processed in the last 10 minutes were duplicates. Moving to next keyword...";
+      console.log(msg);
+      await sendNotification(msg);
       // Kill the scraper process
       childProcess.kill();
     }
@@ -32,7 +61,7 @@ async function main() {
 }
 main();
 
-function scrape(keyword: string, coin: string) {
+function scrapeNext() {
   console.log("Scraping", keyword);
   tweetCount = 0;
   duplicateCount = 0;
@@ -64,8 +93,8 @@ function scrape(keyword: string, coin: string) {
     stdoutBuffer = "";
 
     const parsed = [];
-    for(let line of lines){
-      if(line === "") continue;
+    for (let line of lines) {
+      if (line === "") continue;
       const tweet = JSON.parse(line);
       tweet.coin = coin;
       parsed.push(tweet);
@@ -153,24 +182,6 @@ async function saveChunk() {
 
   saving = false;
 }
-
-setInterval(async () => {
-  if (saving || !chunk.length) return;
-  await saveChunk();
-}, 100);
-
-setInterval(async () => {
-  const msg =
-    "Tweets Processed: " +
-    tweetCount +
-    " | Duplicates: " +
-    duplicateCount +
-    " | Created: " +
-    (tweetCount - duplicateCount);
-  const date = new Date();
-  console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
-}, 5000);
-
 // setInterval(async () => {
 //   if (duplicateCount >= currentIntervalCount) {
 //     await handleDuplicateCount().then(() => {
@@ -190,37 +201,19 @@ function waitForDuplicates() {
   });
 }
 
-async function sendProgressNotification(coin: string, keyword: string) {
-  const msg =
-    "More than 20% of the tweets processed in the last 10 minutes were duplicates. Moving to next keyword...";
-  console.log(msg);
-
-  const statusEmbed = buildStatusEmbed(
-    msg,
-    tweetCount.toLocaleString(),
-    duplicateCount.toLocaleString(),
-    (tweetCount - duplicateCount).toLocaleString(),
-    coin,
-    keyword
-  );
+async function sendNotification(msg: string) {
+  const statusEmbed = buildStatusEmbed(msg);
   await hook.send(statusEmbed);
 }
 
-function buildStatusEmbed(
-  description: string,
-  tweetCount: string,
-  duplicateCount: string,
-  intervalCount: string,
-  coin: string,
-  keyword: string
-) {
+function buildStatusEmbed(description: string) {
   return new MessageBuilder()
     .setTitle("Status Update")
     .setDescription(description)
     .addField("📜Current Keyword", keyword, true)
-    .addField("⚙️ Tweets Processed:", `${tweetCount}`, true)
-    .addField("⚠️ Duplicates:", `${duplicateCount}`, true)
-    .addField("✅Created", `${intervalCount}`, true)
+    .addField("⚙️ Tweets Processed:", tweetCount.toString(), true)
+    .addField("⚠️ Duplicates:", duplicateCount.toString(), true)
+    .addField("✅Created", (tweetCount - duplicateCount).toString(), true)
     .setColor(1)
     .setFooter(`${coin}`)
     .setTimestamp();
