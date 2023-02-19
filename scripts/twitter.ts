@@ -16,6 +16,7 @@ let chunk: any[] = [];
 let saving = false;
 let tweetCount = 0;
 let duplicateCount = 0;
+let createdCount = 0;
 let childProcess: ChildProcessWithoutNullStreams;
 
 async function main() {
@@ -32,7 +33,7 @@ async function main() {
       " | Duplicates: " +
       duplicateCount +
       " | Created: " +
-      (tweetCount - duplicateCount);
+      createdCount;
     const date = new Date();
     console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
   }, 5000);
@@ -65,6 +66,7 @@ function scrapeNext() {
   console.log("Scraping", keyword);
   tweetCount = 0;
   duplicateCount = 0;
+  createdCount = 0;
 
   childProcess = spawn("snscrape", [
     "-n 100000",
@@ -102,7 +104,9 @@ function scrapeNext() {
       } catch (err: any) {
         if (err.toString().includes("Unexpected end of JSON input")) {
           stdoutBuffer = line;
-        }
+          continue
+        } 
+        console.log(err);
       }
     }
 
@@ -135,6 +139,7 @@ async function saveChunk() {
         duplicateCount++;
         return;
       }
+      createdCount++;
 
       //currentIntervalCount++;
       //totalIntervalCount++;
@@ -219,7 +224,7 @@ function buildStatusEmbed(description: string) {
     .addField("📜Current Keyword", keyword, true)
     .addField("⚙️ Tweets Processed:", tweetCount.toString(), true)
     .addField("⚠️ Duplicates:", duplicateCount.toString(), true)
-    .addField("✅Created", (tweetCount - duplicateCount).toString(), true)
+    .addField("✅Created", createdCount.toString(), true)
     .setColor(1)
     .setFooter(`${coin}`)
     .setTimestamp();
