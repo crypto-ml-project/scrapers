@@ -33,6 +33,7 @@ async function main() {
 main();
 
 function scrape(keyword: string, coin: string) {
+  console.log("Scraping", keyword);
   tweetCount = 0;
   duplicateCount = 0;
 
@@ -58,7 +59,7 @@ function scrape(keyword: string, coin: string) {
       .map((tweet: any) => {
         const data = JSON.parse(tweet);
         data.coin = coin;
-        return;
+        return data;
       });
 
     chunk.push(...tweets);
@@ -151,7 +152,7 @@ setInterval(async () => {
 
 setInterval(async () => {
   const msg =
-    "⚙️ Tweets Processed: " +
+    "Tweets Processed: " +
     tweetCount +
     " | Duplicates: " +
     duplicateCount +
