@@ -50,19 +50,28 @@ function scrape(keyword: string, coin: string) {
     hook.error("**Error Processing Tweets:**", `${data}`);
   });
 
-  childProcess.stdout.on("data", async (data: any) => {
-    let tmpTweets = data.toString().split(/\n/g);
-    tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
+  // Use buffering because data from stdout will be chunked
+  let stdoutBuffer = "";
+  childProcess.stdout.on("data", (data: any) => {
+    // If no newline is found, add data to buffer
+    if (!data.toString().includes("\n")) {
+      stdoutBuffer += data.toString();
+      return;
+    }
 
-    const tweets = tmpTweets
-      .slice(0, tmpTweets.length - 1)
-      .map((tweet: any) => {
-        const data = JSON.parse(tweet);
-        data.coin = coin;
-        return data;
-      });
+    // Consume buffer and append newest data
+    const lines = (stdoutBuffer + data.toString()).split("\n");
+    stdoutBuffer = "";
 
-    chunk.push(...tweets);
+    const parsed = [];
+    for(let line of lines){
+      if(line === "") continue;
+      const tweet = JSON.parse(line);
+      tweet.coin = coin;
+      parsed.push(tweet);
+    }
+
+    chunk.push(...parsed);
   });
 }
 
