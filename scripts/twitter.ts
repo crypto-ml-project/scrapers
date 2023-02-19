@@ -95,9 +95,15 @@ function scrapeNext() {
     const parsed = [];
     for (let line of lines) {
       if (line === "") continue;
-      const tweet = JSON.parse(line);
-      tweet.coin = coin;
-      parsed.push(tweet);
+      try {
+        const tweet = JSON.parse(line);
+        tweet.coin = coin;
+        parsed.push(tweet);
+      } catch (err: any) {
+        if (err.toString().includes("Unexpected end of JSON input")) {
+          stdoutBuffer = line;
+        }
+      }
     }
 
     chunk.push(...parsed);
