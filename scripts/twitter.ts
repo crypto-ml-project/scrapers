@@ -1,5 +1,5 @@
 import { PrismaClient } from "@prisma/client";
-import { spawn } from "child_process";
+import { ChildProcessWithoutNullStreams, spawn } from "child_process";
 import { MessageBuilder, Webhook } from "discord-webhook-node";
 import fs from "fs-extra";
 import keywords from "../keywords.json";
@@ -14,35 +14,52 @@ let saving = false;
 
 let tweetCount = 0;
 let duplicateCount = 0;
-let currentIntervalCount = 0;
-let totalIntervalCount = 0;
 
-async function scrape(keyword: string) {
+let childProcess: ChildProcessWithoutNullStreams;
+
+async function main() {
+  for (let [coin, keys] of Object.entries(keywords.twitter)) {
+    for (let keyword of keys) {
+      // Start scraping
+      scrape(keyword, coin);
+      // Block here till we have too many duplicates
+      await waitForDuplicates();
+      await sendProgressNotification(coin, keyword);
+      // Kill the scraper process
+      childProcess.kill();
+    }
+  }
+}
+main();
+
+function scrape(keyword: string, coin: string) {
   tweetCount = 0;
   duplicateCount = 0;
-  currentIntervalCount = 0;
-  totalIntervalCount = 0;
 
-  const child = spawn("snscrape", [
-    //"-n 100000",
+  childProcess = spawn("snscrape", [
+    "-n 100000",
     "--jsonl",
     "twitter-search",
     keyword,
   ]);
 
-  child.stderr.on("data", (data: any) => {
+  childProcess.stderr.on("data", (data: any) => {
     console.error(`stderr: ${data}`);
     fs.appendFile("errors.txt", `${new Date()} ${data}`);
     hook.error("**Error Processing Tweets:**", `${data}`);
   });
 
-  child.stdout.on("data", async (data: any) => {
+  childProcess.stdout.on("data", async (data: any) => {
     let tmpTweets = data.toString().split(/\n/g);
     tmpTweets = tmpTweets.filter((tweet: any) => tweet !== "");
 
-    const tweets = tmpTweets.slice(0, tmpTweets.length - 1).map((tweet: any) => {
-      return JSON.parse(tweet);
-    });
+    const tweets = tmpTweets
+      .slice(0, tmpTweets.length - 1)
+      .map((tweet: any) => {
+        const data = JSON.parse(tweet);
+        data.coin = coin;
+        return;
+      });
 
     chunk.push(...tweets);
   });
@@ -53,24 +70,29 @@ async function saveChunk() {
 
   try {
     const txs: any = [];
-    tweetCount += chunk.length;
 
-    chunk.forEach(async (tweet: any) => {
-      const postId = `${platform}_${tweet.url.split("/")[5]}_${coin}`;
+    // Clone chunk array
+    const cclone = JSON.parse(JSON.stringify(chunk));
+    tweetCount += cclone.length;
+    // Clear original chunk array, because it will be filled again while we are saving
+    chunk = [];
 
+    cclone.forEach(async (tweet: any) => {
+      const postId = `twitter_${tweet.url.split("/")[5]}_${tweet.coin}`;
+
+      // Rly fucking slow
       const postCheck = await prisma.socialMediaPosts.findUnique({
         where: {
           id: postId,
         },
       });
-
       if (postCheck) {
         duplicateCount++;
         return;
       }
 
-      currentIntervalCount++;
-      totalIntervalCount++;
+      //currentIntervalCount++;
+      //totalIntervalCount++;
 
       const userData = {
         userId: tweet.user.username || "",
@@ -97,10 +119,10 @@ async function saveChunk() {
         timeStamp: tweet.date ? new Date(tweet.date) : new Date(),
         like: tweet.likeCount || 0,
         comments: tweet.replyCount || 0,
-        platformId: platform,
+        platformId: "twitter",
         tags: tweet.hashtags ? tweet.hashtags : [],
         userId: tweet.user.username || "",
-        coin: coin,
+        coin: tweet.coin,
       };
 
       const tx2 = await prisma.socialMediaPosts.upsert({
@@ -113,8 +135,6 @@ async function saveChunk() {
 
       txs.push(tx2);
     });
-
-    chunk = [];
 
     await prisma.$transaction(txs);
   } catch (err) {
@@ -136,10 +156,10 @@ setInterval(async () => {
     " | Duplicates: " +
     duplicateCount +
     " | Created: " +
-    totalIntervalCount;
+    (tweetCount - duplicateCount);
   const date = new Date();
   console.log(date.toLocaleDateString(), date.toLocaleTimeString(), msg);
-}, 1000);
+}, 5000);
 
 // setInterval(async () => {
 //   if (duplicateCount >= currentIntervalCount) {
@@ -149,21 +169,31 @@ setInterval(async () => {
 //   }
 // }, 600000);
 
-async function handleDuplicateCount() {
+function waitForDuplicates() {
+  return new Promise((resolve) => {
+    const i = setInterval(() => {
+      if (tweetCount / duplicateCount > 0.2) {
+        clearInterval(i);
+        resolve(null);
+      }
+    }, 1000 * 60 * 10);
+  });
+}
+
+async function sendProgressNotification(coin: string, keyword: string) {
   const msg =
-    "No new tweets found for the past 10min's. Moving to the next Keyword.";
+    "More than 20% of the tweets processed in the last 10 minutes were duplicates. Moving to next keyword...";
+  console.log(msg);
+
   const statusEmbed = buildStatusEmbed(
     msg,
     tweetCount.toLocaleString(),
     duplicateCount.toLocaleString(),
-    totalIntervalCount.toLocaleString(),
-    ""
+    (tweetCount - duplicateCount).toLocaleString(),
+    coin,
+    keyword
   );
   await hook.send(statusEmbed);
-  currentIntervalCount = 0;
-  duplicateCount = 0;
-  console.log(msg);
-  return;
 }
 
 function buildStatusEmbed(
@@ -171,14 +201,16 @@ function buildStatusEmbed(
   tweetCount: string,
   duplicateCount: string,
   intervalCount: string,
-  coin: string
+  coin: string,
+  keyword: string
 ) {
   return new MessageBuilder()
     .setTitle("Status Update")
     .setDescription(description)
+    .addField("📜Current Keyword", keyword, true)
     .addField("⚙️ Tweets Processed:", `${tweetCount}`, true)
     .addField("⚠️ Duplicates:", `${duplicateCount}`, true)
-    .addField("✅ Created", `${intervalCount}`, true)
+    .addField("✅Created", `${intervalCount}`, true)
     .setColor(1)
     .setFooter(`${coin}`)
     .setTimestamp();
