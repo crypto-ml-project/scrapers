@@ -19,6 +19,11 @@ let duplicateCount = 0;
 let createdCount = 0;
 let childProcess: ChildProcessWithoutNullStreams;
 
+enum ContinueReason {
+  TOO_MANY_DUPLICATES,
+  NO_NEW_TWEETS,
+}
+
 async function main() {
   setInterval(async () => {
     if (saving || !chunk.length) return;
@@ -49,10 +54,15 @@ async function main() {
       coin = c;
       keyword = key;
       scrapeNext();
-      // Block here till we have too many duplicates
-      await waitForDuplicates();
-      const msg =
-        "More than 20% of the tweets processed in the last 10 minutes were duplicates. Moving to next keyword...";
+      // Block here till we have too many duplicates or no new tweets
+      const continueReason = await wait();
+      let msg;
+      if (continueReason === ContinueReason.TOO_MANY_DUPLICATES) {
+        msg =
+          "More than 20% of the tweets processed in the last 10 minutes were duplicates. Moving to next keyword...";
+      } else {
+        msg = "No new tweets in the last 10 minutes. Moving to next keyword...";
+      }
       console.log(msg);
       await sendNotification(msg);
       // Kill the scraper process
@@ -104,8 +114,8 @@ function scrapeNext() {
       } catch (err: any) {
         if (err.toString().includes("Unexpected end of JSON input")) {
           stdoutBuffer = line;
-          continue
-        } 
+          continue;
+        }
         console.log(err);
       }
     }
@@ -201,12 +211,21 @@ async function saveChunk() {
 //   }
 // }, 600000);
 
-function waitForDuplicates() {
+let oldTweetCount = 0;
+function wait() {
   return new Promise((resolve) => {
     const i = setInterval(() => {
-      if (tweetCount / duplicateCount > 0.2) {
+      // Check if we got new tweets
+      if (oldTweetCount != 0 && oldTweetCount === tweetCount) {
         clearInterval(i);
-        resolve(null);
+        return resolve(ContinueReason.NO_NEW_TWEETS);
+      } else {
+        oldTweetCount = tweetCount;
+      }
+      // Check duplicates
+      if (duplicateCount / tweetCount > 0.2) {
+        clearInterval(i);
+        resolve(ContinueReason.TOO_MANY_DUPLICATES);
       }
     }, 1000 * 60 * 10);
   });
