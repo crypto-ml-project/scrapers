@@ -69,6 +69,8 @@ async function main() {
       childProcess.kill();
     }
   }
+
+  process.exit(0);
 }
 main();
 
@@ -227,7 +229,7 @@ function wait() {
         clearInterval(i);
         resolve(ContinueReason.TOO_MANY_DUPLICATES);
       }
-    }, 1000 * 60 * 10);
+    }, 1000 * 60 * 1);
   });
 }
 

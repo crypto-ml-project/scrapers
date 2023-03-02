@@ -1,9 +1,9 @@
 {
 	"twitter": {
-		"lido": ["@LidoFinance", "#LDO", "$LDO", "$LIDO", "Lido dao", "Lido finance"],
-		"near": ["@NEARProtocol", "#NEAR", "$NEAR", "@NEAR_Blockchain", "Near Protocol"],
+		"lido": ["stETH", "Lido Herald", "@LidoFinance", "#LDO", "$LDO", "$LIDO", "Lido dao", "Lido finance"],
+		"near": ["Ref finance", "aurora", "trisolaris", "octopus network", "Meta Pool", "Paras", "Sweat Economy", "LandToEmpire", "@NEARProtocol", "#NEAR", "$NEAR", "@NEAR_Blockchain", "Near Protocol"],
 		"optimism": ["@optimismFND", "@OPLabsPBC", "$OP", "Optimism coin", "Optimism Crypto", "Optimism Ecosystem"],
-		"solana": ["@solana", "@SolanaFndn", "$SOL", "$SOL", "solana"],
-		"raydium": ["@RaydiumProtocol", "Raydium", "$Ray"]
+		"solana": ["Orsca.so", "Serum DEX", "Openblock DEX", "Raydium Swap", "Lido Staking", "Metaplex", "Candymachine NFT", "Whirlpool NFT", "Phantom Wallet", "Solend", "Solflare", "@solana", "@SolanaFndn", "$SOL", "$SOL", "solana"],
+		"raydium": ["LP Pools Ray", "Staking", "@RaydiumProtocol", "Raydium", "$Ray"]
 	}
 }
