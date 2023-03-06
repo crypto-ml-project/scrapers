@@ -1,6 +1,17 @@
 const https = require("https");
+const fs = require("fs");
+
+const cursors = JSON.parse(fs.readFileSync("cursors.json"));
+let buffer = [];
+
+setInterval(() => {
+	const data = buffer.map(b => JSON.stringify(b)).join("\n");
+	buffer = [];
+	fs.appendFile("output.txt", data, {}, () => {});
+}, 1000);
 
 async function newSession() {
+	console.log("new session...");
 	const ua = `Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/79.0.3945.${(
 		Math.random() * 9999
 	).toFixed(0)} Safari/537.${(Math.random() * 99).toFixed(0)}`;
@@ -51,9 +62,15 @@ function handler(data, keyword, session) {
 		for (let entry of entries) {
 			// Set next cursor
 			if (entry.entryId === "sq-cursor-bottom") {
+				// Find cursor for next page
 				const cursor = entry.content.operation.cursor.value;
-				console.log("next page:", cursor);
-				search(keyword, cursor, session);
+				cursors[keyword] = cursor;
+				console.log(keyword, "next page:", cursor);
+
+				// Update cursors cache JSON file
+				fs.writeFile("cursors.json", JSON.stringify(cursors), {}, () => { });
+
+				search(keyword, session);
 				continue;
 			}
 			const tweet_id = entry?.content?.item?.content?.tweet?.id;
@@ -63,11 +80,22 @@ function handler(data, keyword, session) {
 			const userId = tweet.user_id || tweet.user_id_str;
 			const user = data.globalObjects.users[userId];
 			if (!user) continue;
+			//console.log(JSON.stringify(tweet), JSON.stringify(userId));
+			buffer.push({
+				keyword,
+				type: "tweet",
+				data: tweet
+			});
+			buffer.push({
+				keyword,
+				type: "user",
+				data: user
+			});
 		}
 	}
 }
 
-async function search(keyword, cursor, session) {
+async function search(keyword, session) {
 	const search_opts = {
 		include_profile_interstitial_type: 1,
 		include_blocking: "1",
@@ -108,8 +136,8 @@ async function search(keyword, cursor, session) {
 		q: keyword
 	};
 
-	if (cursor) {
-		search_opts.cursor = cursor;
+	if (cursors[keyword]) {
+		search_opts.cursor = cursors[keyword];
 	}
 
 	if (!session) {
@@ -117,23 +145,34 @@ async function search(keyword, cursor, session) {
 	}
 	const url = `https://api.twitter.com/2/search/adaptive.json?${new URLSearchParams(search_opts)}`;
 
-	const RETRY_DELAY = 20000;
+	const RETRY_DELAY = 1000;
 	https.get(url, {
 		...session
 	}, (res) => {
+		const retry = () => {
+			console.log(res.statusCode, "retry");
+			setTimeout(() => {
+				search(keyword, null);
+			}, RETRY_DELAY);
+		};
 		let data = "";
 		res.on("data", (chunk) => data += chunk);
 		res.on("end", () => {
-			if (res.statusCode !== 200){
-				console.log(res.statusCode, "retry");
-				setTimeout(() => {
-					search(keyword, cursor, null);
-				}, RETRY_DELAY);
+			if (res.statusCode !== 200) {
+				retry();
 				return;
 			}
-			handler(JSON.parse(data), keyword, session)
+			try {
+				const json = JSON.parse(data);
+				handler(json, keyword, session);
+			} catch (err) {
+				console.log(err);
+				retry();
+				return;
+			}
 		});
 	});
 }
 
-search("Bitcoin", null, null)
+search("Bitcoin", null);
+search("Solana", null);
