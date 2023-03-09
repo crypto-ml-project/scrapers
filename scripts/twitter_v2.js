@@ -1,14 +1,28 @@
 const https = require("https");
 const fs = require("fs");
 
+const MAX_CONCURRENT = 5;
+
+const keywordsJSON = JSON.parse(fs.readFileSync("keywords.json"));
 const cursors = JSON.parse(fs.readFileSync("cursors.json"));
 let buffer = [];
+let tweets = 0;
+let running = [];
 
 setInterval(() => {
-	const data = buffer.map(b => JSON.stringify(b)).join("\n");
+	// Write output buffer
+	const data = buffer.map((b) => JSON.stringify(b)).join("\n");
 	buffer = [];
-	fs.appendFile("output.txt", data, {}, () => {});
-}, 1000);
+	fs.appendFile("output.txt", `${data}\n`, {}, () => { });
+
+	// Update cursors cache JSON file
+	fs.writeFile("cursors.json", JSON.stringify(cursors), {}, () => { });
+}, 2000);
+
+const startTime = Date.now();
+setInterval(() => {
+	console.log("scraping... tps:", tweets / ((Date.now() - startTime) / 1000), "done:", tweets);
+}, 5000);
 
 async function newSession() {
 	console.log("new session...");
@@ -16,36 +30,53 @@ async function newSession() {
 		Math.random() * 9999
 	).toFixed(0)} Safari/537.${(Math.random() * 99).toFixed(0)}`;
 
-	const data = await new Promise((resolve, reject) => {
-		https.get("https://twitter.com", {
-			headers: {
-				"User-Agent": ua,
-			},
-		}, (response) => {
-			let data;
-			response.on("data", (chunk) => data += chunk);
-			response.on("end", () => resolve(data));
-			response.on("error", (err) => reject(err));
+	let data;
+	try {
+		data = await new Promise((resolve, reject) => {
+			https.get(
+				"https://twitter.com",
+				{
+					headers: {
+						"User-Agent": ua,
+					},
+				},
+				(response) => {
+					let resBuffer;
+					response.on("data", (chunk) => (resBuffer += chunk));
+					response.on("end", () => resolve(resBuffer));
+					response.on("error", (err) => reject(err));
+				}
+			);
 		});
-	})
+	} catch (err) {
+		console.log(err);
+		return await newSession();
+	}
 
-	const token = data.match(/\"gt=(\d+);/)[1];
+	const match = data.match(/\"gt=(\d+);/);
+	if (!match?.length) {
+		console.log("Could not find Guest Token in response");
+		return await newSession();
+	}
+	const token = match[1];
 
-	const tls = 'TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA';
+	const tls =
+		"TLS_AES_128_GCM_SHA256:TLS_AES_256_GCM_SHA384:TLS_CHACHA20_POLY1305_SHA256:ECDHE-ECDSA-AES128-GCM-SHA256:ECDHE-RSA-AES128-GCM-SHA256:ECDHE-ECDSA-AES256-GCM-SHA384:ECDHE-RSA-AES256-GCM-SHA384:ECDHE-ECDSA-CHACHA20-POLY1305:ECDHE-RSA-CHACHA20-POLY1305:ECDHE-RSA-AES128-SHA:ECDHE-RSA-AES256-SHA:AES128-GCM-SHA256:AES256-GCM-SHA384:AES128-SHA:AES256-SHA";
 
 	return {
 		headers: {
 			"User-Agent": ua,
 			Referer: "https://twitter.com",
 			"X-GUEST-TOKEN": token,
-			Authorization: "Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
+			Authorization:
+				"Bearer AAAAAAAAAAAAAAAAAAAAANRILgAAAAAAnNwIzUejRCOuH5E6I8xnZz4puTs=1Zv7ttfk8LF81IUq16cHjhLTvJu4FA33AGWWjCpTnA",
 			"Accept-Language": "en-US,en;q=0.5",
 		},
-		ciphers: tls
+		ciphers: tls,
 	};
 }
 
-function handler(data, keyword, session) {
+function handler(data, coin, keyword, session) {
 	const instructions = data?.timeline?.instructions;
 	if (!instructions) {
 		console.log("no instructions");
@@ -65,12 +96,9 @@ function handler(data, keyword, session) {
 				// Find cursor for next page
 				const cursor = entry.content.operation.cursor.value;
 				cursors[keyword] = cursor;
-				console.log(keyword, "next page:", cursor);
+				//console.log(keyword, "next page:", cursor);
 
-				// Update cursors cache JSON file
-				fs.writeFile("cursors.json", JSON.stringify(cursors), {}, () => { });
-
-				search(keyword, session);
+				search(coin, keyword, session);
 				continue;
 			}
 			const tweet_id = entry?.content?.item?.content?.tweet?.id;
@@ -82,20 +110,26 @@ function handler(data, keyword, session) {
 			if (!user) continue;
 			//console.log(JSON.stringify(tweet), JSON.stringify(userId));
 			buffer.push({
+				coin,
 				keyword,
 				type: "tweet",
-				data: tweet
+				data: tweet,
 			});
 			buffer.push({
+				coin,
 				keyword,
 				type: "user",
-				data: user
+				data: user,
 			});
+			tweets++;
 		}
 	}
 }
 
-async function search(keyword, session) {
+async function search(coin, keyword, session) {
+	// Check if should continue search
+	if(!running.includes(keyword)) return;
+
 	const search_opts = {
 		include_profile_interstitial_type: 1,
 		include_blocking: "1",
@@ -133,7 +167,7 @@ async function search(keyword, session) {
 		include_ext_edit_control: "true",
 		ext: "mediaStats,highlightedLabel,hasNftAvatar,voiceInfo,enrichments,superFollowMetadata,unmentionInfo,editControl,collab_control,vibe",
 		tweet_search_mode: "live",
-		q: keyword
+		q: keyword,
 	};
 
 	if (cursors[keyword]) {
@@ -143,36 +177,55 @@ async function search(keyword, session) {
 	if (!session) {
 		session = await newSession();
 	}
-	const url = `https://api.twitter.com/2/search/adaptive.json?${new URLSearchParams(search_opts)}`;
+	const url = `https://api.twitter.com/2/search/adaptive.json?${new URLSearchParams(
+		search_opts
+	)}`;
 
 	const RETRY_DELAY = 1000;
-	https.get(url, {
-		...session
-	}, (res) => {
-		const retry = () => {
-			console.log(res.statusCode, "retry");
-			setTimeout(() => {
-				search(keyword, null);
-			}, RETRY_DELAY);
-		};
-		let data = "";
-		res.on("data", (chunk) => data += chunk);
-		res.on("end", () => {
-			if (res.statusCode !== 200) {
-				retry();
-				return;
-			}
-			try {
-				const json = JSON.parse(data);
-				handler(json, keyword, session);
-			} catch (err) {
-				console.log(err);
-				retry();
-				return;
-			}
-		});
-	});
+	https.get(
+		url,
+		{
+			...session,
+		},
+		(res) => {
+			const retry = () => {
+				console.log(res.statusCode, "retry");
+				setTimeout(() => {
+					search(coin, keyword, null);
+				}, RETRY_DELAY);
+			};
+			let data = "";
+			res.on("data", (chunk) => (data += chunk));
+			res.on("end", () => {
+				if (res.statusCode !== 200) {
+					retry();
+					return;
+				}
+				try {
+					const json = JSON.parse(data);
+					handler(json, coin, keyword, session);
+				} catch (err) {
+					console.log(err);
+					retry();
+					return;
+				}
+			});
+		}
+	);
 }
 
-search("Bitcoin", null);
-search("Solana", null);
+async function main(){
+	// Rotate through keywords each 2h
+	for(let [coin, keywords] of Object.entries(keywordsJSON.twitter)){
+		for(let keyword of keywords){
+			if(running.length >= MAX_CONCURRENT){
+				await new Promise(resolve => setTimeout(resolve, 1000 * 60 * 60 * 2));
+				running = [];
+			}
+			running.push(keyword);
+			console.log("Now scraping:", keyword);
+			search(coin, keyword, null);
+		}
+	}
+}
+main();
