@@ -1,8 +1,6 @@
 const https = require("https");
 const fs = require("fs");
-
-const MAX_CONCURRENT = 5;
-
+const MAX_CONCURRENT = 2;
 const keywordsJSON = JSON.parse(fs.readFileSync("keywords.json"));
 const cursors = JSON.parse(fs.readFileSync("cursors.json"));
 let buffer = [];
@@ -56,6 +54,7 @@ async function newSession() {
 	const match = data.match(/\"gt=(\d+);/);
 	if (!match?.length) {
 		console.log("Could not find Guest Token in response");
+		await new Promise((resolve) => setTimeout(resolve, 1000));
 		return await newSession();
 	}
 	const token = match[1];
@@ -88,6 +87,12 @@ function handler(data, coin, keyword, session) {
 			instruction?.replaceEntry?.entry,
 		];
 		if (!entries || !entries?.[0]) continue;
+
+		if (entries.length === 1) {
+			console.log(`Not enough entries @ ${keyword}, moving to next keyword...`)
+			running = running.filter(k => k !== keyword);
+			return;
+		}
 
 		// Parse entries
 		for (let entry of entries) {
@@ -128,7 +133,7 @@ function handler(data, coin, keyword, session) {
 
 async function search(coin, keyword, session) {
 	// Check if should continue search
-	if(!running.includes(keyword)) return;
+	if (!running.includes(keyword)) return;
 
 	const search_opts = {
 		include_profile_interstitial_type: 1,
@@ -214,13 +219,12 @@ async function search(coin, keyword, session) {
 	);
 }
 
-async function main(){
-	// Rotate through keywords each 2h
-	for(let [coin, keywords] of Object.entries(keywordsJSON.twitter)){
-		for(let keyword of keywords){
-			if(running.length >= MAX_CONCURRENT){
-				await new Promise(resolve => setTimeout(resolve, 1000 * 60 * 60 * 2));
-				running = [];
+async function main() {
+	for (let [coin, keywords] of Object.entries(keywordsJSON.twitter)) {
+		for (let keyword of keywords) {
+			// If above MAX_CONCURRENT wait till a keyword finishes
+			while (running.length >= MAX_CONCURRENT) {
+				await new Promise(resolve => setTimeout(resolve, 2000));
 			}
 			running.push(keyword);
 			console.log("Now scraping:", keyword);

@@ -58,9 +58,11 @@ func main () {
 	var lineCount int
 	var errors int
 
+	var duplicates int
+
 	var p fastjson.Parser
 
-	readFile, err := os.Open("../output.txt")
+	readFile, err := os.Open("./output.txt")
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -82,6 +84,7 @@ func main () {
 		if string(v.GetStringBytes("type")) == "tweet" {
 			id := v.GetInt("data", "id")
 			if exists(id, knownTweets) {
+				duplicates++
 				continue
 			}
 			var tags []string
@@ -159,4 +162,6 @@ func main () {
 	}
 	usersOut.Close()
 
+
+	fmt.Println("duplicate tweets:", duplicates)
 }
